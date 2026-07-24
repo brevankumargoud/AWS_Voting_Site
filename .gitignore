@@ -1,0 +1,15 @@
+# Dependencies
+node_modules
+.pnpm-store
+
+# Production build
+dist
+
+# Environment variables
+.env
+.env.local
+
+# Temp & OS files
+.DS_Store
+*.log
+vite.config.js.timestamp*
