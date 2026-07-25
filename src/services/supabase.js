@@ -35,43 +35,19 @@ const LOCAL_STORAGE_KEYS = {
   VOTES: 'aws_voting_votes',
 };
 
-// Seed initial sample session if local storage is empty
+// Initialize local storage cache cleanly without hardcoded static demo sessions
 const initializeLocalStorage = () => {
-  if (!localStorage.getItem(LOCAL_STORAGE_KEYS.SESSIONS)) {
-    const defaultSession = {
-      id: 'session-demo-1',
-      title: 'AWS Innovation Pitch 2026',
-      description: 'Single event vote for top project presentation',
-      status: 'ACTIVE',
-      created_at: new Date().toISOString()
-    };
-    
-    const defaultContestants = [
-      {
-        id: 'c1',
-        session_id: 'session-demo-1',
-        name: 'Alice Johnson (Cloud Matrix)',
-        image_url: 'https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?w=500&auto=format&fit=crop&q=80',
-        created_at: new Date().toISOString()
-      },
-      {
-        id: 'c2',
-        session_id: 'session-demo-1',
-        name: 'Bob Smith (Neural Core)',
-        image_url: 'https://images.unsplash.com/photo-1560250097-0b93528c311a?w=500&auto=format&fit=crop&q=80',
-        created_at: new Date().toISOString()
-      },
-      {
-        id: 'c3',
-        session_id: 'session-demo-1',
-        name: 'Charlie Davis (Quantum Mesh)',
-        image_url: 'https://images.unsplash.com/photo-1580489944761-15a19d654956?w=500&auto=format&fit=crop&q=80',
-        created_at: new Date().toISOString()
-      }
-    ];
+  const existingSessions = JSON.parse(localStorage.getItem(LOCAL_STORAGE_KEYS.SESSIONS) || '[]');
+  const hasDemo = existingSessions.some(s => s.id === 'session-demo-1');
+  if (hasDemo) {
+    localStorage.removeItem(LOCAL_STORAGE_KEYS.SESSIONS);
+    localStorage.removeItem(LOCAL_STORAGE_KEYS.CONTESTANTS);
+    localStorage.removeItem(LOCAL_STORAGE_KEYS.VOTES);
+  }
 
-    localStorage.setItem(LOCAL_STORAGE_KEYS.SESSIONS, JSON.stringify([defaultSession]));
-    localStorage.setItem(LOCAL_STORAGE_KEYS.CONTESTANTS, JSON.stringify(defaultContestants));
+  if (!localStorage.getItem(LOCAL_STORAGE_KEYS.SESSIONS)) {
+    localStorage.setItem(LOCAL_STORAGE_KEYS.SESSIONS, JSON.stringify([]));
+    localStorage.setItem(LOCAL_STORAGE_KEYS.CONTESTANTS, JSON.stringify([]));
     localStorage.setItem(LOCAL_STORAGE_KEYS.VOTES, JSON.stringify([]));
   }
 };
@@ -114,6 +90,13 @@ export const dbService = {
           const sessions = JSON.parse(localStorage.getItem(LOCAL_STORAGE_KEYS.SESSIONS) || '[]');
           return sessions.find(s => s.status === 'ACTIVE') || null;
         }
+
+        // Cache active session in local storage cache
+        if (data) {
+          const sessions = JSON.parse(localStorage.getItem(LOCAL_STORAGE_KEYS.SESSIONS) || '[]');
+          const otherSessions = sessions.filter(s => s.id !== data.id);
+          localStorage.setItem(LOCAL_STORAGE_KEYS.SESSIONS, JSON.stringify([data, ...otherSessions]));
+        }
         return data;
       } catch (err) {
         console.warn('Supabase getActiveSession error, using local fallback:', err);
@@ -141,6 +124,12 @@ export const dbService = {
           console.warn('Supabase getLatestSession warning, fallback to local:', error.message);
           const sessions = JSON.parse(localStorage.getItem(LOCAL_STORAGE_KEYS.SESSIONS) || '[]');
           return sessions[0] || null;
+        }
+
+        if (data) {
+          const sessions = JSON.parse(localStorage.getItem(LOCAL_STORAGE_KEYS.SESSIONS) || '[]');
+          const otherSessions = sessions.filter(s => s.id !== data.id);
+          localStorage.setItem(LOCAL_STORAGE_KEYS.SESSIONS, JSON.stringify([data, ...otherSessions]));
         }
         return data;
       } catch (err) {
@@ -170,6 +159,12 @@ export const dbService = {
           console.warn('Supabase getContestants warning, fallback to local:', error.message);
           const contestants = JSON.parse(localStorage.getItem(LOCAL_STORAGE_KEYS.CONTESTANTS) || '[]');
           return contestants.filter(c => c.session_id === sessionId);
+        }
+
+        if (data && data.length > 0) {
+          const contestants = JSON.parse(localStorage.getItem(LOCAL_STORAGE_KEYS.CONTESTANTS) || '[]');
+          const otherContestants = contestants.filter(c => c.session_id !== sessionId);
+          localStorage.setItem(LOCAL_STORAGE_KEYS.CONTESTANTS, JSON.stringify([...otherContestants, ...data]));
         }
         return data || [];
       } catch (err) {
@@ -255,6 +250,15 @@ export const dbService = {
           .select();
 
         if (contestantsError) throw contestantsError;
+
+        // Mirror new active session and contestants to localStorage cache
+        const sessions = JSON.parse(localStorage.getItem(LOCAL_STORAGE_KEYS.SESSIONS) || '[]');
+        sessions.forEach(s => { if (s.status === 'ACTIVE') s.status = 'COMPLETED'; });
+        sessions.unshift(sessionData);
+        localStorage.setItem(LOCAL_STORAGE_KEYS.SESSIONS, JSON.stringify(sessions));
+
+        const existingContestants = JSON.parse(localStorage.getItem(LOCAL_STORAGE_KEYS.CONTESTANTS) || '[]');
+        localStorage.setItem(LOCAL_STORAGE_KEYS.CONTESTANTS, JSON.stringify([...existingContestants, ...contestantsData]));
 
         notifyRealtimeUpdate();
         return { session: sessionData, contestants: contestantsData };
