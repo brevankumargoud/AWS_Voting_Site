@@ -88,7 +88,7 @@ export const dbService = {
         if (error && error.code !== 'PGRST116') {
           console.warn('Supabase getActiveSession warning, fallback to local:', error.message);
           const sessions = JSON.parse(localStorage.getItem(LOCAL_STORAGE_KEYS.SESSIONS) || '[]');
-          return sessions.find(s => s.status === 'ACTIVE') || null;
+          return sessions.find(s => s.status === 'ACTIVE') || sessions[0] || null;
         }
 
         // Cache active session in local storage cache
@@ -96,16 +96,20 @@ export const dbService = {
           const sessions = JSON.parse(localStorage.getItem(LOCAL_STORAGE_KEYS.SESSIONS) || '[]');
           const otherSessions = sessions.filter(s => s.id !== data.id);
           localStorage.setItem(LOCAL_STORAGE_KEYS.SESSIONS, JSON.stringify([data, ...otherSessions]));
+          return data;
         }
-        return data;
+
+        // Fallback to latest session if no explicit ACTIVE status found
+        const latest = await this.getLatestSession();
+        return latest;
       } catch (err) {
         console.warn('Supabase getActiveSession error, using local fallback:', err);
         const sessions = JSON.parse(localStorage.getItem(LOCAL_STORAGE_KEYS.SESSIONS) || '[]');
-        return sessions.find(s => s.status === 'ACTIVE') || null;
+        return sessions.find(s => s.status === 'ACTIVE') || sessions[0] || null;
       }
     } else {
       const sessions = JSON.parse(localStorage.getItem(LOCAL_STORAGE_KEYS.SESSIONS) || '[]');
-      return sessions.find(s => s.status === 'ACTIVE') || null;
+      return sessions.find(s => s.status === 'ACTIVE') || sessions[0] || null;
     }
   },
 
@@ -165,8 +169,13 @@ export const dbService = {
           const contestants = JSON.parse(localStorage.getItem(LOCAL_STORAGE_KEYS.CONTESTANTS) || '[]');
           const otherContestants = contestants.filter(c => c.session_id !== sessionId);
           localStorage.setItem(LOCAL_STORAGE_KEYS.CONTESTANTS, JSON.stringify([...otherContestants, ...data]));
+          return data;
+        } else {
+          const contestants = JSON.parse(localStorage.getItem(LOCAL_STORAGE_KEYS.CONTESTANTS) || '[]');
+          const localMatches = contestants.filter(c => c.session_id === sessionId);
+          if (localMatches.length > 0) return localMatches;
+          return [];
         }
-        return data || [];
       } catch (err) {
         console.warn('Supabase getContestants error, using local fallback:', err);
         const contestants = JSON.parse(localStorage.getItem(LOCAL_STORAGE_KEYS.CONTESTANTS) || '[]');
@@ -468,7 +477,17 @@ export const dbService = {
 
         if (error) throw error;
         result = data;
+
+        const sessions = JSON.parse(localStorage.getItem(LOCAL_STORAGE_KEYS.SESSIONS) || '[]');
+        const target = sessions.find(s => s.id === sessionId);
+        if (target) {
+          target.status = status;
+        } else {
+          sessions.unshift(data);
+        }
+        localStorage.setItem(LOCAL_STORAGE_KEYS.SESSIONS, JSON.stringify(sessions));
       } catch (err) {
+        console.warn('Supabase updateSessionStatus error, falling back to local storage:', err.message);
         const sessions = JSON.parse(localStorage.getItem(LOCAL_STORAGE_KEYS.SESSIONS) || '[]');
         const session = sessions.find(s => s.id === sessionId);
         if (session) {
