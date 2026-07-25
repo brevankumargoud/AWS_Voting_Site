@@ -190,11 +190,11 @@ export const dbService = {
 
         const { error: uploadError } = await supabase.storage
           .from('contestants')
-          .upload(filePath, file);
+          .upload(filePath, file, { cacheControl: '3600', upsert: true });
 
         if (uploadError) {
-          console.warn('Supabase image upload warning, fallback to data URL:', uploadError.message);
-          return await fileToDataUrl(file);
+          console.warn('Supabase image upload warning:', uploadError.message);
+          return 'https://via.placeholder.com/400x400?text=Contestant';
         }
 
         const { data: urlData } = supabase.storage
@@ -203,8 +203,8 @@ export const dbService = {
 
         return urlData.publicUrl;
       } catch (err) {
-        console.warn('Supabase upload exception, fallback to data URL:', err);
-        return await fileToDataUrl(file);
+        console.warn('Supabase upload exception:', err);
+        return 'https://via.placeholder.com/400x400?text=Contestant';
       }
     } else {
       return await fileToDataUrl(file);
@@ -214,58 +214,67 @@ export const dbService = {
   // 5. Create Voting Session with Unlimited Contestants
   async createVotingSession({ title, description, contestants }) {
     if (isSupabaseConfigured) {
-      try {
-        // Deactivate previous active sessions
-        await supabase
-          .from('voting_sessions')
-          .update({ status: 'COMPLETED' })
-          .eq('status', 'ACTIVE');
+      // Deactivate previous active sessions
+      const { error: deactError } = await supabase
+        .from('voting_sessions')
+        .update({ status: 'COMPLETED' })
+        .eq('status', 'ACTIVE');
 
-        // Insert New Active Session
-        const { data: sessionData, error: sessionError } = await supabase
-          .from('voting_sessions')
-          .insert([{ title, description, status: 'ACTIVE' }])
-          .select()
-          .single();
-
-        if (sessionError) throw sessionError;
-
-        // Upload contestant images & prepare inserts
-        const contestantsToInsert = [];
-        for (const item of contestants) {
-          let imageUrl = item.image_url;
-          if (item.file) {
-            imageUrl = await this.uploadContestantImage(item.file);
-          }
-          contestantsToInsert.push({
-            session_id: sessionData.id,
-            name: item.name,
-            image_url: imageUrl
-          });
-        }
-
-        const { data: contestantsData, error: contestantsError } = await supabase
-          .from('contestants')
-          .insert(contestantsToInsert)
-          .select();
-
-        if (contestantsError) throw contestantsError;
-
-        // Mirror new active session and contestants to localStorage cache
-        const sessions = JSON.parse(localStorage.getItem(LOCAL_STORAGE_KEYS.SESSIONS) || '[]');
-        sessions.forEach(s => { if (s.status === 'ACTIVE') s.status = 'COMPLETED'; });
-        sessions.unshift(sessionData);
-        localStorage.setItem(LOCAL_STORAGE_KEYS.SESSIONS, JSON.stringify(sessions));
-
-        const existingContestants = JSON.parse(localStorage.getItem(LOCAL_STORAGE_KEYS.CONTESTANTS) || '[]');
-        localStorage.setItem(LOCAL_STORAGE_KEYS.CONTESTANTS, JSON.stringify([...existingContestants, ...contestantsData]));
-
-        notifyRealtimeUpdate();
-        return { session: sessionData, contestants: contestantsData };
-      } catch (err) {
-        console.warn('Supabase createVotingSession error, creating in local fallback:', err);
-        return this.createVotingSessionLocal({ title, description, contestants });
+      if (deactError) {
+        console.warn('Deactivating previous active sessions warning:', deactError.message);
       }
+
+      // Insert New Active Session
+      const { data: sessionData, error: sessionError } = await supabase
+        .from('voting_sessions')
+        .insert([{ title, description, status: 'ACTIVE' }])
+        .select()
+        .single();
+
+      if (sessionError) {
+        console.error('Supabase voting_sessions insert error:', sessionError);
+        throw new Error(`Failed to create voting session in database: ${sessionError.message}`);
+      }
+
+      // Upload contestant images & prepare inserts
+      const contestantsToInsert = [];
+      for (const item of contestants) {
+        let imageUrl = item.image_url;
+        if (item.file) {
+          imageUrl = await this.uploadContestantImage(item.file);
+        }
+        // Sanitize imageUrl to prevent blob: URLs or broken strings in DB
+        if (!imageUrl || imageUrl.startsWith('blob:')) {
+          imageUrl = `https://via.placeholder.com/400x400?text=${encodeURIComponent(item.name || 'Contestant')}`;
+        }
+        contestantsToInsert.push({
+          session_id: sessionData.id,
+          name: item.name,
+          image_url: imageUrl
+        });
+      }
+
+      const { data: contestantsData, error: contestantsError } = await supabase
+        .from('contestants')
+        .insert(contestantsToInsert)
+        .select();
+
+      if (contestantsError) {
+        console.error('Supabase contestants insert error:', contestantsError);
+        throw new Error(`Failed to insert contestants into database: ${contestantsError.message}`);
+      }
+
+      // Mirror new active session and contestants to localStorage cache
+      const sessions = JSON.parse(localStorage.getItem(LOCAL_STORAGE_KEYS.SESSIONS) || '[]');
+      sessions.forEach(s => { if (s.status === 'ACTIVE') s.status = 'COMPLETED'; });
+      sessions.unshift(sessionData);
+      localStorage.setItem(LOCAL_STORAGE_KEYS.SESSIONS, JSON.stringify(sessions));
+
+      const existingContestants = JSON.parse(localStorage.getItem(LOCAL_STORAGE_KEYS.CONTESTANTS) || '[]');
+      localStorage.setItem(LOCAL_STORAGE_KEYS.CONTESTANTS, JSON.stringify([...existingContestants, ...contestantsData]));
+
+      notifyRealtimeUpdate();
+      return { session: sessionData, contestants: contestantsData };
     } else {
       return this.createVotingSessionLocal({ title, description, contestants });
     }
