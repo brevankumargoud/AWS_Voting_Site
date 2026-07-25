@@ -103,10 +103,10 @@ export const useVotingSession = () => {
       }
     }
 
-    // 3. Silent background poll every 3 seconds as resilient fallback
+    // 3. Silent background poll every 1.5 seconds for guaranteed fast live updates
     pollInterval = setInterval(() => {
       fetchSessionData(true);
-    }, 3000);
+    }, 1500);
 
     return () => {
       if (channelInstance && supabase) {

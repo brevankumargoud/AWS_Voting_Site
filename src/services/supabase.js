@@ -354,30 +354,33 @@ export const dbService = {
     }
 
     if (isSupabaseConfigured) {
-      try {
-        const { data, error } = await supabase
-          .from('votes')
-          .insert([{
-            session_id: sessionId,
-            contestant_id: contestantId,
-            voter_id: voterId
-          }])
-          .select()
-          .single();
+      const { data, error } = await supabase
+        .from('votes')
+        .insert([{
+          session_id: sessionId,
+          contestant_id: contestantId,
+          voter_id: voterId
+        }])
+        .select()
+        .single();
 
-        if (error) {
-          if (error.code === '23505') {
-            throw new Error('You have already submitted a vote from this browser device.');
-          }
-          console.warn('Supabase submitVote error, fallback to local storage:', error.message);
-          return this.submitVoteLocal({ sessionId, contestantId, voterId });
+      if (error) {
+        if (error.code === '23505') {
+          throw new Error('You have already submitted a vote from this browser device.');
         }
-        notifyRealtimeUpdate();
-        return data;
-      } catch (err) {
-        if (err.message?.includes('already')) throw err;
-        return this.submitVoteLocal({ sessionId, contestantId, voterId });
+        console.error('Supabase submitVote database insert error:', error);
+        throw new Error(`Failed to record vote in database: ${error.message}`);
       }
+
+      // Sync vote to local storage cache
+      const votes = JSON.parse(localStorage.getItem(LOCAL_STORAGE_KEYS.VOTES) || '[]');
+      if (!votes.some(v => v.id === data.id)) {
+        votes.push(data);
+        localStorage.setItem(LOCAL_STORAGE_KEYS.VOTES, JSON.stringify(votes));
+      }
+
+      notifyRealtimeUpdate();
+      return data;
     } else {
       return this.submitVoteLocal({ sessionId, contestantId, voterId });
     }
@@ -413,10 +416,12 @@ export const dbService = {
           .eq('session_id', sessionId);
 
         if (votesError) {
+          console.warn('Supabase getVoteResults error, using local cache:', votesError.message);
           const allVotes = JSON.parse(localStorage.getItem(LOCAL_STORAGE_KEYS.VOTES) || '[]');
           votesList = allVotes.filter(v => v.session_id === sessionId);
         } else {
           votesList = votesData || [];
+          localStorage.setItem(LOCAL_STORAGE_KEYS.VOTES, JSON.stringify(votesList));
         }
       } catch (err) {
         const allVotes = JSON.parse(localStorage.getItem(LOCAL_STORAGE_KEYS.VOTES) || '[]');
