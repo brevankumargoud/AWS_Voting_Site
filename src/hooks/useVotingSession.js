@@ -22,8 +22,8 @@ export const useVotingSession = () => {
         dbService.getLatestSession(),
       ]);
 
-      setActiveSession(active);
-      setLatestSession(latest);
+      setActiveSession((prev) => (JSON.stringify(prev) === JSON.stringify(active) ? prev : active));
+      setLatestSession((prev) => (JSON.stringify(prev) === JSON.stringify(latest) ? prev : latest));
 
       const targetSessionId = active ? active.id : (latest ? latest.id : null);
 
@@ -32,8 +32,8 @@ export const useVotingSession = () => {
           dbService.getContestants(targetSessionId),
           dbService.getVoteResults(targetSessionId),
         ]);
-        setContestants(contestantsData);
-        setResults(resultsData);
+        setContestants((prev) => (JSON.stringify(prev) === JSON.stringify(contestantsData) ? prev : contestantsData));
+        setResults((prev) => (JSON.stringify(prev) === JSON.stringify(resultsData) ? prev : resultsData));
       } else {
         setContestants([]);
         setResults({ totalVotes: 0, breakdown: [] });

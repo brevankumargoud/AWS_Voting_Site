@@ -188,8 +188,6 @@ export const Results = () => {
         <div className="h-[350px] sm:h-[400px] w-full pt-4">
           {breakdown.length > 0 ? (
             <Bar
-              key={`${totalVotes}_${breakdown.map(b => `${b.id}-${b.vote_count}`).join('_')}`}
-              redraw={true}
               data={chartData}
               options={chartOptions}
             />
