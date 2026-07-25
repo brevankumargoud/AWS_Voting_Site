@@ -1,21 +1,11 @@
 import { createClient } from '@supabase/supabase-js';
 
-const supabaseUrl = import.meta.env.VITE_SUPABASE_URL || '';
-const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY || '';
+const supabaseUrl = import.meta.env.VITE_SUPABASE_URL || 'https://zsbuctdhzqqpadiezokv.supabase.co';
+const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InpzYnVjdGRoenFxcGFkaWV6b2t2Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODQ5NTUzMDYsImV4cCI6MjEwMDUzMTMwNn0.pQChgDBUmHFBH8PlT_1PVpTzAxBvLE2IWmJ9hqFVJow';
 
-export const isSupabaseConfigured = Boolean(
-  supabaseUrl && 
-  supabaseAnonKey && 
-  supabaseUrl !== 'https://your-supabase-url.supabase.co'
-);
+export const isSupabaseConfigured = Boolean(supabaseUrl && supabaseAnonKey);
 
-if (!isSupabaseConfigured) {
-  console.warn('Supabase environment variables (VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY) are missing or unconfigured.');
-}
-
-export const supabase = isSupabaseConfigured
-  ? createClient(supabaseUrl, supabaseAnonKey)
-  : null;
+export const supabase = createClient(supabaseUrl, supabaseAnonKey);
 
 // Global Realtime Event Bus helper for multi-tab and single-page instant synchronization
 const broadcastChannel = typeof window !== 'undefined' && 'BroadcastChannel' in window
