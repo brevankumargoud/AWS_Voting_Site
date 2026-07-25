@@ -88,7 +88,7 @@ export const dbService = {
         if (error && error.code !== 'PGRST116') {
           console.warn('Supabase getActiveSession warning, fallback to local:', error.message);
           const sessions = JSON.parse(localStorage.getItem(LOCAL_STORAGE_KEYS.SESSIONS) || '[]');
-          return sessions.find(s => s.status === 'ACTIVE') || sessions[0] || null;
+          return sessions.find(s => s.status === 'ACTIVE') || null;
         }
 
         // Cache active session in local storage cache
@@ -99,17 +99,16 @@ export const dbService = {
           return data;
         }
 
-        // Fallback to latest session if no explicit ACTIVE status found
-        const latest = await this.getLatestSession();
-        return latest;
+        // Return null if no session with ACTIVE status exists
+        return null;
       } catch (err) {
         console.warn('Supabase getActiveSession error, using local fallback:', err);
         const sessions = JSON.parse(localStorage.getItem(LOCAL_STORAGE_KEYS.SESSIONS) || '[]');
-        return sessions.find(s => s.status === 'ACTIVE') || sessions[0] || null;
+        return sessions.find(s => s.status === 'ACTIVE') || null;
       }
     } else {
       const sessions = JSON.parse(localStorage.getItem(LOCAL_STORAGE_KEYS.SESSIONS) || '[]');
-      return sessions.find(s => s.status === 'ACTIVE') || sessions[0] || null;
+      return sessions.find(s => s.status === 'ACTIVE') || null;
     }
   },
 
@@ -279,8 +278,7 @@ export const dbService = {
       sessions.unshift(sessionData);
       localStorage.setItem(LOCAL_STORAGE_KEYS.SESSIONS, JSON.stringify(sessions));
 
-      const existingContestants = JSON.parse(localStorage.getItem(LOCAL_STORAGE_KEYS.CONTESTANTS) || '[]');
-      localStorage.setItem(LOCAL_STORAGE_KEYS.CONTESTANTS, JSON.stringify([...existingContestants, ...contestantsData]));
+      localStorage.setItem(LOCAL_STORAGE_KEYS.CONTESTANTS, JSON.stringify(contestantsData));
 
       notifyRealtimeUpdate();
       return { session: sessionData, contestants: contestantsData };
