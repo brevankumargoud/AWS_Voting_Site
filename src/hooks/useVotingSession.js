@@ -54,18 +54,27 @@ export const useVotingSession = () => {
 
     let channelInstance = null;
     let pollInterval = null;
+    let bcInstance = null;
 
+    const handleDataUpdate = () => {
+      fetchSessionData(true);
+    };
+
+    // 1. Realtime Supabase PostgreSQL WebSockets
     if (isSupabaseConfigured && supabase) {
       try {
-        const channelId = `realtime-voting-${Math.random().toString(36).substring(2, 9)}`;
+        const channelId = `realtime-voting-global-${Math.random().toString(36).substring(2, 7)}`;
         
         channelInstance = supabase
           .channel(channelId)
           .on('postgres_changes', { event: '*', schema: 'public', table: 'votes' }, () => {
-            fetchSessionData(true);
+            handleDataUpdate();
           })
           .on('postgres_changes', { event: '*', schema: 'public', table: 'voting_sessions' }, () => {
-            fetchSessionData(true);
+            handleDataUpdate();
+          })
+          .on('postgres_changes', { event: '*', schema: 'public', table: 'contestants' }, () => {
+            handleDataUpdate();
           })
           .subscribe((status) => {
             if (status === 'SUBSCRIBED') {
@@ -77,10 +86,27 @@ export const useVotingSession = () => {
       }
     }
 
-    // Silent background poll every 6 seconds (no loader flash)
+    // 2. Custom Events & Storage Events for 0ms Single-Page & Multi-Tab Sync
+    window.addEventListener('aws_voting_data_change', handleDataUpdate);
+    window.addEventListener('storage', handleDataUpdate);
+
+    if (typeof window !== 'undefined' && 'BroadcastChannel' in window) {
+      try {
+        bcInstance = new BroadcastChannel('aws_voting_realtime_bus');
+        bcInstance.onmessage = (e) => {
+          if (e.data?.type === 'VOTE_DATA_CHANGED') {
+            handleDataUpdate();
+          }
+        };
+      } catch (err) {
+        console.warn('BroadcastChannel error:', err);
+      }
+    }
+
+    // 3. Silent background poll every 3 seconds as resilient fallback
     pollInterval = setInterval(() => {
       fetchSessionData(true);
-    }, 6000);
+    }, 3000);
 
     return () => {
       if (channelInstance && supabase) {
@@ -88,6 +114,15 @@ export const useVotingSession = () => {
           supabase.removeChannel(channelInstance);
         } catch (e) {
           console.warn('Error removing channel:', e);
+        }
+      }
+      window.removeEventListener('aws_voting_data_change', handleDataUpdate);
+      window.removeEventListener('storage', handleDataUpdate);
+      if (bcInstance) {
+        try {
+          bcInstance.close();
+        } catch (e) {
+          console.warn('Error closing BroadcastChannel:', e);
         }
       }
       if (pollInterval) {

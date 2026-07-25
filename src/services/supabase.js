@@ -78,6 +78,24 @@ const initializeLocalStorage = () => {
 
 initializeLocalStorage();
 
+// Global Realtime Event Bus helper for multi-tab and single-page instant synchronization
+const broadcastChannel = typeof window !== 'undefined' && 'BroadcastChannel' in window
+  ? new BroadcastChannel('aws_voting_realtime_bus')
+  : null;
+
+export const notifyRealtimeUpdate = () => {
+  if (typeof window !== 'undefined') {
+    window.dispatchEvent(new CustomEvent('aws_voting_data_change'));
+    if (broadcastChannel) {
+      try {
+        broadcastChannel.postMessage({ type: 'VOTE_DATA_CHANGED', timestamp: Date.now() });
+      } catch (err) {
+        console.warn('BroadcastChannel postMessage error:', err);
+      }
+    }
+  }
+};
+
 export const dbService = {
   // 1. Get Current Active Voting Session
   async getActiveSession() {
@@ -88,6 +106,7 @@ export const dbService = {
           .select('*')
           .eq('status', 'ACTIVE')
           .order('created_at', { ascending: false })
+          .limit(1)
           .maybeSingle();
 
         if (error && error.code !== 'PGRST116') {
@@ -237,6 +256,7 @@ export const dbService = {
 
         if (contestantsError) throw contestantsError;
 
+        notifyRealtimeUpdate();
         return { session: sessionData, contestants: contestantsData };
       } catch (err) {
         console.warn('Supabase createVotingSession error, creating in local fallback:', err);
@@ -281,6 +301,7 @@ export const dbService = {
     localStorage.setItem(LOCAL_STORAGE_KEYS.SESSIONS, JSON.stringify(sessions));
     localStorage.setItem(LOCAL_STORAGE_KEYS.CONTESTANTS, JSON.stringify([...existingContestants, ...newContestants]));
 
+    notifyRealtimeUpdate();
     return { session: newSession, contestants: newContestants };
   },
 
@@ -338,6 +359,7 @@ export const dbService = {
           console.warn('Supabase submitVote error, fallback to local storage:', error.message);
           return this.submitVoteLocal({ sessionId, contestantId, voterId });
         }
+        notifyRealtimeUpdate();
         return data;
       } catch (err) {
         if (err.message?.includes('already')) throw err;
@@ -359,6 +381,7 @@ export const dbService = {
     };
     votes.push(newVote);
     localStorage.setItem(LOCAL_STORAGE_KEYS.VOTES, JSON.stringify(votes));
+    notifyRealtimeUpdate();
     return newVote;
   },
 
@@ -415,6 +438,7 @@ export const dbService = {
 
   // 9. Admin Session Control: End or Reset Voting
   async updateSessionStatus(sessionId, status) {
+    let result = null;
     if (isSupabaseConfigured) {
       try {
         const { data, error } = await supabase
@@ -425,7 +449,7 @@ export const dbService = {
           .single();
 
         if (error) throw error;
-        return data;
+        result = data;
       } catch (err) {
         const sessions = JSON.parse(localStorage.getItem(LOCAL_STORAGE_KEYS.SESSIONS) || '[]');
         const session = sessions.find(s => s.id === sessionId);
@@ -433,7 +457,7 @@ export const dbService = {
           session.status = status;
           localStorage.setItem(LOCAL_STORAGE_KEYS.SESSIONS, JSON.stringify(sessions));
         }
-        return session;
+        result = session;
       }
     } else {
       const sessions = JSON.parse(localStorage.getItem(LOCAL_STORAGE_KEYS.SESSIONS) || '[]');
@@ -442,8 +466,10 @@ export const dbService = {
         session.status = status;
         localStorage.setItem(LOCAL_STORAGE_KEYS.SESSIONS, JSON.stringify(sessions));
       }
-      return session;
+      result = session;
     }
+    notifyRealtimeUpdate();
+    return result;
   },
 
   // 10. Verify Admin Credentials via Supabase RPC or Secure Auth Provider

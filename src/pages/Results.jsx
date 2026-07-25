@@ -187,7 +187,12 @@ export const Results = () => {
 
         <div className="h-[350px] sm:h-[400px] w-full pt-4">
           {breakdown.length > 0 ? (
-            <Bar data={chartData} options={chartOptions} />
+            <Bar
+              key={`${totalVotes}_${breakdown.map(b => `${b.id}-${b.vote_count}`).join('_')}`}
+              redraw={true}
+              data={chartData}
+              options={chartOptions}
+            />
           ) : (
             <div className="h-full flex items-center justify-center text-slate-500 text-sm">
               No contestant data available for chart rendering.
