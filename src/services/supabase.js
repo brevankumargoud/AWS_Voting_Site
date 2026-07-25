@@ -222,7 +222,34 @@ export const dbService = {
   // 5. Create Voting Session with Unlimited Contestants
   async createVotingSession({ title, description, contestants }) {
     if (isSupabaseConfigured) {
-      // Deactivate previous active sessions
+      // 1. Process and upload image files in parallel with timeout fallback
+      const processedContestants = await Promise.all(
+        contestants.map(async (item) => {
+          let imageUrl = item.image_url;
+          if (item.file) {
+            try {
+              imageUrl = await Promise.race([
+                this.uploadContestantImage(item.file),
+                new Promise((res) =>
+                  setTimeout(() => res(`https://via.placeholder.com/400x400?text=${encodeURIComponent(item.name || 'Contestant')}`), 3500)
+                ),
+              ]);
+            } catch (err) {
+              console.warn('Image upload failed, using fallback:', err);
+              imageUrl = `https://via.placeholder.com/400x400?text=${encodeURIComponent(item.name || 'Contestant')}`;
+            }
+          }
+          if (!imageUrl || imageUrl.startsWith('blob:')) {
+            imageUrl = `https://via.placeholder.com/400x400?text=${encodeURIComponent(item.name || 'Contestant')}`;
+          }
+          return {
+            name: item.name,
+            image_url: imageUrl,
+          };
+        })
+      );
+
+      // 2. Deactivate previous active sessions in Supabase
       const { error: deactError } = await supabase
         .from('voting_sessions')
         .update({ status: 'COMPLETED' })
@@ -232,7 +259,7 @@ export const dbService = {
         console.warn('Deactivating previous active sessions warning:', deactError.message);
       }
 
-      // Insert New Active Session
+      // 3. Insert New Active Session into Supabase
       const { data: sessionData, error: sessionError } = await supabase
         .from('voting_sessions')
         .insert([{ title, description, status: 'ACTIVE' }])
@@ -244,23 +271,12 @@ export const dbService = {
         throw new Error(`Failed to create voting session in database: ${sessionError.message}`);
       }
 
-      // Upload contestant images & prepare inserts
-      const contestantsToInsert = [];
-      for (const item of contestants) {
-        let imageUrl = item.image_url;
-        if (item.file) {
-          imageUrl = await this.uploadContestantImage(item.file);
-        }
-        // Sanitize imageUrl to prevent blob: URLs or broken strings in DB
-        if (!imageUrl || imageUrl.startsWith('blob:')) {
-          imageUrl = `https://via.placeholder.com/400x400?text=${encodeURIComponent(item.name || 'Contestant')}`;
-        }
-        contestantsToInsert.push({
-          session_id: sessionData.id,
-          name: item.name,
-          image_url: imageUrl
-        });
-      }
+      // 4. Immediately insert all contestants linked to session_id
+      const contestantsToInsert = processedContestants.map((c) => ({
+        session_id: sessionData.id,
+        name: c.name,
+        image_url: c.image_url,
+      }));
 
       const { data: contestantsData, error: contestantsError } = await supabase
         .from('contestants')
@@ -272,14 +288,14 @@ export const dbService = {
         throw new Error(`Failed to insert contestants into database: ${contestantsError.message}`);
       }
 
-      // Mirror new active session and contestants to localStorage cache
+      // 5. Update local cache with complete active session & contestants records
       const sessions = JSON.parse(localStorage.getItem(LOCAL_STORAGE_KEYS.SESSIONS) || '[]');
       sessions.forEach(s => { if (s.status === 'ACTIVE') s.status = 'COMPLETED'; });
       sessions.unshift(sessionData);
       localStorage.setItem(LOCAL_STORAGE_KEYS.SESSIONS, JSON.stringify(sessions));
-
       localStorage.setItem(LOCAL_STORAGE_KEYS.CONTESTANTS, JSON.stringify(contestantsData));
 
+      // 6. Broadcast realtime notification ONLY after DB has session + contestants!
       notifyRealtimeUpdate();
       return { session: sessionData, contestants: contestantsData };
     } else {
