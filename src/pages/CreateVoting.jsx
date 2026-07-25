@@ -72,21 +72,17 @@ export const CreateVoting = () => {
         toast.error(`Please enter a name for Contestant ${i + 1}.`);
         return;
       }
-      if (!contestants[i].file && !contestants[i].previewUrl) {
-        toast.error(`Please upload an image for Contestant ${i + 1} (${contestants[i].name}).`);
-        return;
-      }
     }
 
     try {
       setLoading(true);
-      toast.loading('Uploading contestant images to Supabase Storage...', { id: 'create_voting' });
+      toast.loading('Creating voting session in database...', { id: 'create_voting' });
 
       // Prepare payload for Supabase insertion
       const contestantsPayload = contestants.map((c) => ({
         name: c.name.trim(),
         file: c.file,
-        image_url: c.previewUrl || 'https://via.placeholder.com/400x400?text=Contestant',
+        image_url: c.previewUrl || `https://via.placeholder.com/400x400?text=${encodeURIComponent(c.name.trim() || 'Contestant')}`,
       }));
 
       await dbService.createVotingSession({
